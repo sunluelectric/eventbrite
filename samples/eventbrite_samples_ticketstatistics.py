@@ -1,0 +1,286 @@
+import sys,os
+import glob
+import shutil
+import csv
+from datetime import datetime
+import codecs
+
+''' 
+This python program reforms the attendee CSVs download from Eventbrite to obtain a reader-friendly statistics result CSV.
+
+The following files shall be saved under the same directory with this python program.
+1. Previously generated statistics result CSVs (if any), named "mgs_statistics_result_yyyymmdd_hhmm.csv".
+2. Attendee CSVs downloaded from Eventbrite, named "report-yyyymmdd-Thhmm.csv"
+'''
+
+##
+print("####################################################################################################")
+# Note CWD
+cwd = os.getcwd()
+print("CWD is:", cwd)
+
+print("")
+# Note the statistics result CSVs. The latest file is selected.
+old_statistics_flag = 0
+for file in glob.glob("msg_statistics_result_2020[0-1][0-9][0-3][0-9]_[0-2][0-9][0-5][0-9].csv"):
+    old_statistics_flag += 1
+    if old_statistics_flag == 1:
+        file_split = file.split('_')
+        old_statistics_datetime = int(file_split[3]+file_split[4][0:4])
+        old_statistics_name = file
+    else:
+        file_split = file.split('_')
+        old_statistics_datetime_multi = int(file_split[3]+file_split[4][0:4])
+        if old_statistics_datetime_multi > old_statistics_datetime:
+            old_statistics_datetime = old_statistics_datetime_multi
+            old_statistics_name = file
+if old_statistics_flag == 0:
+    print("No previously generated statistics recult CSV is found in CWD.")
+elif old_statistics_flag == 1:
+    print("One statistics result CSV is found in CWD.")
+    print("The statistics result CSV file name is: ",old_statistics_name)
+    print("The statistics result CSV file date and time is: ",old_statistics_datetime)
+else:
+    print("Multiple statistics result CSVs are found in CWD. The latest statistics result CSV is selected.")
+    print("The statistics result CSV file name is: ",old_statistics_name)
+    print("The statistics result CSV file date and time is: ",old_statistics_datetime)
+
+print("")
+# Note the new attendee CSV downloaded from Eventbrite
+new_attendee_flag = 0
+for file in glob.glob("report-2020-[0-1][0-9]-[0-3][0-9]T[0-2][0-9][0-5][0-9].csv"):
+    new_attendee_flag += 1
+    if new_attendee_flag == 1:
+        file_split = file.split('-')
+        new_attendee_datetime = int(file_split[1]+file_split[2]+file_split[3][0:2]+file_split[3][3:7])
+        new_attendee_name = file
+    else:
+        file_split = file.split('-')
+        new_attendee_datetime_multi = int(file_split[1]+file_split[2]+file_split[3][0:2]+file_split[3][3:7])
+        if new_attendee_datetime_multi > new_attendee_datetime:
+            new_attendee_datetime = new_attendee_datetime_multi
+            new_attendee_name = file
+if new_attendee_flag == 0:
+    print("No attendee CSV downloaded from Eventbrite is found in CWD.")
+    print("The updating process is terminated.")
+    print("")
+    debug = input("Press any key to exit the program.")
+    exit()
+elif new_attendee_flag == 1:
+    print("One attendee CSV is found in CWD.")
+    print("The attendee CSV file name is: ",new_attendee_name)
+    print("The attendee CSV file date and time is: ",new_attendee_datetime)
+else:
+    print("Multiple attendee CSVs are found in CWD. The latest statistics result CSV is selected.")
+    print("The attendee CSV file name is: ",new_attendee_name)
+    print("The attendee CSV file date and time is: ",new_attendee_datetime)
+
+print("")
+# Compare old statistics result CSV and new attendee CSV date and time
+if (old_statistics_flag > 0) and (old_statistics_datetime >= new_attendee_datetime):
+    print("The selected statistcs result CSV time stamp is more or equaly recent than that of the selected attendee CSV (indicating that some files are missing).")
+    print("Therefore, the attendee CSV is ignored.")
+    print("Please download the most up-to-date CSV files from Eventbrite.")
+    print("The updating process is terminated.")
+    print("")
+    debug = input("Press any key to exit the program.")
+    exit()
+
+print("")
+##
+# Create a new blank CSV
+new_tempstatistics_name = "msg_statistics_result_" + str(new_attendee_datetime)[0:8] + "_" + str(new_attendee_datetime)[8:12] + "_temp.csv"
+try:
+    os.remove(new_tempstatistics_name)
+except:
+    pass
+print("Creating a new temporary CSV to reform data from the selected attandee CSV.")
+print("The temporary CSV is named ",new_tempstatistics_name)
+with open(new_tempstatistics_name,'w',newline='',encoding='utf-8') as objWriteCSV:
+    csvWriteCSV = csv.writer(objWriteCSV)
+    statistics_title = ["Order No.","Order Date and Time","Name","Email","Primary Attendee","Accompany","Require Visa",
+                        "Symposium","Symposium Dinner","Pre-Event","Tech-Tour","Cancel Registration",
+                        "Confirmation Email Sent","Reminder1 Email Sent","Reminder2 Email Sent","Reminder3 Email Sent",
+                        "Check-In","Feedback Email Sent","Reserved1","Reserved2","Reserved3","Reserved4","Reserved5","Flag"]
+    csvWriteCSV.writerows([statistics_title])
+    sum_of_attendee = [0,0,0,0,0,0,0] # "Primary Attendee","Accompany","Require Visa", "Symposium","Symposium Dinner","Pre-Event","Tech-Tour"
+    
+    with open(new_attendee_name,'rt',encoding='utf-8') as objReadCSVAttendee:
+        # Put the entire data in list
+        csvReadCSVAttendee = [row for row in csv.reader(objReadCSVAttendee,delimiter=',')]
+        csvReadCSVAttendee_length = len(csvReadCSVAttendee)
+        
+        row_read_index = 0
+        current_order_number = "100"
+        for row_read in csvReadCSVAttendee:
+            if row_read_index == 0:
+                pass
+            else:
+                if row_read[0] == current_order_number:
+                    pass
+                else:
+                    # New order
+                    current_order_number = row_read[0]
+                    current_order_datetime = row_read[1][0:4]+row_read[1][5:7]+row_read[1][8:10]+ " " + row_read[1][11:13]+row_read[1][14:16]
+                    current_order_index = 0
+                    # Create a blank dictionary for this order.
+                    # The dictionary is used to store the infromation of an individual guest.
+                    # The key of this dictionary is the name of the guest
+                    # The value of this dictionary is a list of "visa requirements" and "events", etc.
+                    current_order_dict = dict()
+                    while csvReadCSVAttendee[row_read_index+current_order_index][0]==current_order_number:
+                        # Still in the order:
+                        current_order_index_attendeename = (csvReadCSVAttendee[row_read_index+current_order_index][2].strip()).title() + " " + (csvReadCSVAttendee[row_read_index+current_order_index][3].strip()).title()
+                        if not(current_order_index_attendeename in current_order_dict):
+                            # This row is associated with a new guest. Register his/her name and email in the dictionary.
+                            current_order_dict[current_order_index_attendeename] = [csvReadCSVAttendee[row_read_index+current_order_index][4],[0,0,0,0,0,0,0]]
+                        # Register the event of the attendee.
+                        if csvReadCSVAttendee[row_read_index+current_order_index][6] == "Singapore 2020 Symposium on Microgrids (Oct 7 & 8)":
+                            current_order_dict[current_order_index_attendeename][1][0] = 1 # "Primary Attendee","Accompany","Require Visa", "Symposium","Symposium Dinner","Pre-Event","Tech-Tour"
+                            current_order_dict[current_order_index_attendeename][1][3] = 1
+                            sum_of_attendee[0] += 1
+                            sum_of_attendee[3] += 1
+                        elif csvReadCSVAttendee[row_read_index+current_order_index][6] == "Require Visa for Entry into Singapore":
+                            current_order_dict[current_order_index_attendeename][1][2] = 1
+                            sum_of_attendee[2] += 1
+                        elif csvReadCSVAttendee[row_read_index+current_order_index][6] == "Symposium Dinner (Oct 7)":
+                            current_order_dict[current_order_index_attendeename][1][4] += 1
+                            sum_of_attendee[4] += 1
+                        elif csvReadCSVAttendee[row_read_index+current_order_index][6] == "Symposium Pre-Event & Welcome Reception (Oct 6)":
+                            current_order_dict[current_order_index_attendeename][1][5] = 1
+                            sum_of_attendee[5] += 1
+                        elif csvReadCSVAttendee[row_read_index+current_order_index][6] == "Symposium Technical Tour (Oct 9 & 10)":
+                            current_order_dict[current_order_index_attendeename][1][6] = 1
+                            sum_of_attendee[6] += 1
+                        if row_read_index+current_order_index+1 == csvReadCSVAttendee_length:
+                            # The attendee CSV is comming to the end. This must be the last row.
+                            break
+                        else:
+                            current_order_index += 1
+                    # All info about this order is registered in the dictionary. Write to CSV.
+                    for current_order_dict_key in current_order_dict:
+                        if current_order_dict[current_order_dict_key][1][0] == 0:
+                            current_order_dict[current_order_dict_key][1][1] = 1
+                            sum_of_attendee[1] += 1
+                        current_order_dict_key_info1 = [current_order_number,
+                                                       current_order_datetime,
+                                                       current_order_dict_key,
+                                                       current_order_dict[current_order_dict_key][0]]
+                        current_order_dict_key_info2 = current_order_dict[current_order_dict_key][1]
+                        current_order_dict_key_info3 = ["0","0","0","0","0","0","0","0","0","0","0","0","New"]
+                        current_order_dict_key_info = current_order_dict_key_info1 + current_order_dict_key_info2 + current_order_dict_key_info3
+                        
+                        csvWriteCSV.writerows([current_order_dict_key_info])
+            row_read_index += 1
+    objReadCSVAttendee.close()
+    csvWriteCSV.writerows([["Sum","","","",str(sum_of_attendee[0]),str(sum_of_attendee[1]),str(sum_of_attendee[2]),str(sum_of_attendee[3]),str(sum_of_attendee[4]),str(sum_of_attendee[5]),str(sum_of_attendee[6])]])
+objWriteCSV.close()
+print("A new temporary CSV to reform data from the selected attandee CSV has been created.")
+
+if old_statistics_flag > 0:
+    print("")
+    print("Since a statistic result CSV generated previously has meen detected, the new temporary CSV is to be merged with the previously generated statistic result CSV.")
+    new_statistics_name = "msg_statistics_result_" + str(new_attendee_datetime)[0:8] + "_" + str(new_attendee_datetime)[8:12] + ".csv"
+    try:
+        os.remove(new_statistics_name)
+    except:
+        pass
+    # Previous statistic result CSV: old_statistics_name
+    # Newly generated temporary CSV: new_tempstatistics_name
+    print("Creating new statistic result CSV " +new_statistics_name)
+    with open(new_statistics_name,'w',newline='',encoding='utf-8') as objWriteCSV:
+        csvWriteCSV = csv.writer(objWriteCSV)
+        with open(old_statistics_name,'rt',encoding='utf-8') as objReadCSVOldStatistics:
+            csvReadCSVOldStatistics = [row for row in csv.reader(objReadCSVOldStatistics,delimiter=',')]
+            with open(new_tempstatistics_name,encoding='utf-8') as objReadCSVNewStatistics:
+                csvReadCSVNewStatistics = [row for row in csv.reader(objReadCSVNewStatistics,delimiter=',')]
+                statistics_title_revised = csvReadCSVOldStatistics[0]
+                # The title is copy-and-paste from the previous statistics CSV.
+                csvWriteCSV.writerows([statistics_title_revised])
+                
+                # A 2-layer dictionary is created to hold the information of the new temporary CSV.
+                # The rows from the previous statistics CSV are "searched" inside the dictionary.
+                # Order No. and Name are used as the primary key for the searching for the 2 layers of the dictionary, respectively.
+                # If order is not found, it means that the order is canceled and/or the name is removed.
+                # If order is found but name is not found, the person is deleted or changed name.
+                # If order and name are found, check whether content is changed.
+                
+                # Go through csvReadCSVNewStatistics to create the dictionary.
+                order_dict = dict()
+                row_read_index = 0
+                for row_read in csvReadCSVNewStatistics[0:-1]:
+                    if row_read_index == 0:
+                        row_read_index += 1
+                        continue
+                    if row_read[0] in order_dict:
+                        # This order already exists
+                        if row_read[2] in order_dict[row_read[0]]:
+                            # This person already exists (which should not happen at this stage)
+                            pass
+                        else:
+                            # Add this person's info.
+                            order_dict[row_read[0]][row_read[2]] = row_read # The entire line is input.
+                    else:
+                        # This order is not yet in the dictionary
+                        # Creat the keys in 2 layer dictionary
+                        order_dict[row_read[0]]={row_read[2]:row_read}
+                    row_read_index += 1
+                
+                # Cross Check of previous statistic result CSV using the new temporary CSV
+                print("")
+                row_read_index = 0
+                for row_read in csvReadCSVOldStatistics[0:-1]:
+                    if row_read_index == 0:
+                        row_read_index += 1
+                        continue
+                    # Check whether the order still exists in the 1st layer.
+                    if row_read[0] in order_dict:
+                        # Check whether the name still exists in the 2nd layer.
+                        if row_read[2] in order_dict[row_read[0]]:
+                            # Check content (Only related to personal information and attending events)
+                            if order_dict[row_read[0]][row_read[2]][0:11] == row_read[0:11]:
+                                # Basic information unchanged
+                                order_dict[row_read[0]][row_read[2]] = row_read
+                                order_dict[row_read[0]][row_read[2]][-1] = "Unchanged"
+                            else:
+                                 # Basic information is changed.
+                                 print("Basic information of Order No. "+row_read[0]+" name "+row_read[2]+ " has been changed.")
+                                 order_dict[row_read[0]][row_read[2]] = row_read
+                                 order_dict[row_read[0]][row_read[2]][-1] = "Changed"
+                        else:
+                            print("A person has been removed/changed name in Order No. "+row_read[0]+ 
+                                  " There was a name "+row_read[2]+ "that existed in "+old_statistics_name+ "but is not in the latest attendee list anymore.")
+                    else:
+                        print("An order existed in the previous statistics result CSV has been deleted. The order number was "+row_read[0]+" in "+old_statistics_name)
+                    row_read_index += 1
+            
+                # Write the dictionary to file. The sequence of rows shall follow the new CSV.
+                row_read_index = 0
+                for row_read in csvReadCSVNewStatistics[0:-1]:
+                    if row_read_index == 0:
+                        row_read_index += 1
+                        continue
+                    if order_dict[row_read[0]][row_read[2]][-1] == "0":
+                        order_dict[row_read[0]][row_read[2]][-1] = "New"
+                    csvWriteCSV.writerows([order_dict[row_read[0]][row_read[2]]])
+                    row_read_index += 1
+                
+                # Add statistics.
+                csvWriteCSV.writerows([["Sum","","","",str(sum_of_attendee[0]),str(sum_of_attendee[1]),str(sum_of_attendee[2]),str(sum_of_attendee[3]),str(sum_of_attendee[4]),str(sum_of_attendee[5]),str(sum_of_attendee[6])]])
+            objReadCSVNewStatistics.close()
+        objReadCSVOldStatistics.close()
+    objWriteCSV.close()
+    try:
+        os.remove(new_tempstatistics_name)
+    except:
+        pass
+else:
+    new_statistics_name = "msg_statistics_result_" + str(new_attendee_datetime)[0:8] + "_" + str(new_attendee_datetime)[8:12] + ".csv"
+    print("")
+    print("Since no existing statistic result CSV has meen detected, the new temporary CSV is to be renamed to "+new_statistics_name)
+    os.rename(new_tempstatistics_name,new_statistics_name)
+
+print("")
+print("New statistics result CSV "+new_statistics_name+" has been created in "+cwd)
+print("")
+debug = input("Press Enter to exit the program.")
