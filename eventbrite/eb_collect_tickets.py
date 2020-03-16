@@ -6,23 +6,20 @@ from datetime import datetime
 import codecs
 
 ''' 
-This python program reforms the attendee CSVs download from Eventbrite to obtain a reader-friendly statistics result CSV.
+This python program reforms the attendee CSV downloaded from Eventbrite to create a reader-friendly statistics result CSV.
 
-The following files shall be saved under the same directory with this python program.
-1. Previously generated statistics result CSVs (if any), named "mgs_statistics_result_yyyymmdd_hhmm.csv".
-2. Attendee CSVs downloaded from Eventbrite, named "report-yyyymmdd-Thhmm.csv"
+The following files shall be copied under the same directory with this program.
+1. Previously generated statistics result CSV(s) (if any), named "eb_statistics_result_yyyymmdd_hhmm.csv".
+2. Attendee CSV(s) downloaded from Eventbrite, named "report-yyyymmdd-Thhmm.csv"
 '''
 
-##
-print("####################################################################################################")
-# Note CWD
+#
+# Find CWD
 cwd = os.getcwd()
-print("CWD is:", cwd)
 
-print("")
-# Note the statistics result CSVs. The latest file is selected.
+# Find the previously statistics result CSVs (if any). The latest file is selected.
 old_statistics_flag = 0
-for file in glob.glob("msg_statistics_result_2020[0-1][0-9][0-3][0-9]_[0-2][0-9][0-5][0-9].csv"):
+for file in glob.glob("eb_statistics_result_2020[0-1][0-9][0-3][0-9]_[0-2][0-9][0-5][0-9].csv"):
     old_statistics_flag += 1
     if old_statistics_flag == 1:
         file_split = file.split('_')
